@@ -33,7 +33,7 @@ void display_matrix(Node **matrix, int side_length)
     printf("\n");
 }
 
-int metropolis_step(Node **matrix, int side_length, double J, double B)
+double metropolis_step(Node **matrix, int side_length, double coupling_constant, double external_magnetic_field)
 {
 
     int rand_row = rint(rand() / (double)(RAND_MAX - 1) * (side_length - 1));
@@ -48,19 +48,19 @@ int metropolis_step(Node **matrix, int side_length, double J, double B)
     int l_spin = matrix[rand_col][(rand_row - 1 + side_length) % side_length].spin;
 
     double delta_energy = 0;
-    delta_energy += 2 * J * (c_spin * t_spin > 0 ? 1 : -1);
-    delta_energy += 2 * J * (c_spin * r_spin > 0 ? 1 : -1);
-    delta_energy += 2 * J * (c_spin * b_spin > 0 ? 1 : -1);
-    delta_energy += 2 * J * (c_spin * l_spin > 0 ? 1 : -1);
+    delta_energy += 2 * coupling_constant * (c_spin * t_spin > 0 ? 1 : -1);
+    delta_energy += 2 * coupling_constant * (c_spin * r_spin > 0 ? 1 : -1);
+    delta_energy += 2 * coupling_constant * (c_spin * b_spin > 0 ? 1 : -1);
+    delta_energy += 2 * coupling_constant * (c_spin * l_spin > 0 ? 1 : -1);
 
-    delta_energy += -2 * B * c_spin;
+    delta_energy += -2 * external_magnetic_field * c_spin;
 
-    if (delta_energy < 0) return 0; // step accepted
+    if (delta_energy < 0) return delta_energy; // step accepted
 
     double a = rand() / (double)(RAND_MAX - 1);
 
-    if (a > exp(delta_energy))
-        return 0; // step accepted
+    if (a > exp(delta_energy / 1)) //! put here the temperature
+        return delta_energy;       // step accepted
     else
         matrix[rand_col][rand_row].spin *= (-1);
     return 0;
@@ -105,9 +105,10 @@ int main(int argc, char const *argv[])
 
     srand(2); // Fix rand seed for reproducibility
 
-    const int N_NODES_PER_SIDE = 10;
+    FILE *thermo_file = fopen("data.dat", "w");
+    const int N_NODES_PER_SIDE = 30;
     double COUPLING_CONSTANT = 1;
-    double EXTERNAL_MAGNETIC_FIELD = 3;
+    double EXTERNAL_MAGNETIC_FIELD = -0.002;
 
     // Node node_matrix[N_NODES_PER_SIDE][N_NODES_PER_SIDE];
     Node **node_matrix = (Node **)malloc(sizeof(Node *) * N_NODES_PER_SIDE);
@@ -136,24 +137,18 @@ int main(int argc, char const *argv[])
         }
     }
 
-    display_matrix(node_matrix, N_NODES_PER_SIDE);
+    double energy = compute_matrix_energy(node_matrix, N_NODES_PER_SIDE, COUPLING_CONSTANT, EXTERNAL_MAGNETIC_FIELD);
+    int index_remove_mag_field = 1e5;
 
-    for (size_t i = 0; i < 500; i++)
+    for (int i = 0; i < 1e6; i++)
     {
-        metropolis_step(node_matrix, N_NODES_PER_SIDE, COUPLING_CONSTANT, EXTERNAL_MAGNETIC_FIELD);
+        if (i == index_remove_mag_field)
+            EXTERNAL_MAGNETIC_FIELD = 0;
+
+        energy += metropolis_step(node_matrix, N_NODES_PER_SIDE, COUPLING_CONSTANT, EXTERNAL_MAGNETIC_FIELD);
+        double mag = compute_magnetization(node_matrix, N_NODES_PER_SIDE);
+        fprintf(thermo_file, "%d %lf %lf\n", i, mag, energy);
     }
-    printf("%lf\n", compute_magnetization(node_matrix, N_NODES_PER_SIDE));
-
-    printf("EXTERNAL REMOVED");
-    EXTERNAL_MAGNETIC_FIELD = 0;
-
-    for (size_t i = 0; i < 500; i++)
-    {
-        metropolis_step(node_matrix, N_NODES_PER_SIDE, COUPLING_CONSTANT, EXTERNAL_MAGNETIC_FIELD);
-        printf("%lf\n", compute_magnetization(node_matrix, N_NODES_PER_SIDE));
-    }
-
-    display_matrix(node_matrix, N_NODES_PER_SIDE);
 
     return 0;
 }
